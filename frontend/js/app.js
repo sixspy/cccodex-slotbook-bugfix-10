@@ -24,9 +24,11 @@ createApp({
     const bookings = ref([]);
     const recon = ref({});
     const audits = ref([]);
+    const holdsOrder = ref([]);
     const contention = ref([]);
     const dash = ref({});
     const holdForm = ref({ slot_code: "S-AM-01", party_key: "P-NEW", seats: 1 });
+    const holdsMeta = ref({ sort: "expire_at", fresh: true, contended: [] });
     const confirmId = ref(1);
 
     function logout() {
@@ -58,11 +60,20 @@ createApp({
       actionErr.value = "";
       dash.value = await api.get("/api/dashboard");
       slots.value = (await api.get("/api/slots")).items;
-      holds.value = (await api.get("/api/holds")).items;
+      const hb = await api.get("/api/holds");
+      holds.value = hb.items;
+      holdsMeta.value = {
+        sort: hb.sort,
+        scheme: hb.scheme,
+        fresh: hb.fresh,
+        contended: hb.contended || [],
+      };
       waitlist.value = (await api.get("/api/waitlist")).items;
       bookings.value = (await api.get("/api/bookings")).items;
       recon.value = await api.get("/api/reconcile");
-      audits.value = (await api.get("/api/audit")).items;
+      const ab = await api.get("/api/audit");
+      audits.value = ab.items;
+      holdsOrder.value = ab.holds_order || [];
       contention.value = (await api.get("/api/contention")).items;
     }
 
@@ -78,13 +89,20 @@ createApp({
       try { actionErr.value = ""; await api.post("/api/waitlist/promote", { wait_id: id }); await refresh(); }
       catch (e) { actionErr.value = e.message; }
     }
+    async function doRenew(id) {
+      try {
+        actionErr.value = "";
+        await api.post("/api/holds/renew", { hold_id: id, minutes: 30 });
+        await refresh();
+      } catch (e) { actionErr.value = e.message; }
+    }
 
     onMounted(() => { if (token.value) refresh(); });
 
     return {
       token, user, username, password, err, actionErr, tab, nav,
-      slots, holds, waitlist, bookings, recon, audits, contention, dash,
-      holdForm, confirmId, login, logout, refresh, doHold, doConfirm, promoteWait,
+      slots, holds, waitlist, bookings, recon, audits, contention, dash, holdsMeta, holdsOrder,
+      holdForm, confirmId, login, logout, refresh, doHold, doConfirm, promoteWait, doRenew,
     };
   },
   template: `

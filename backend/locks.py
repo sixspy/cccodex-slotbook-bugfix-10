@@ -34,6 +34,8 @@ def try_acquire(conn, lock_key: str, holder: str) -> bool:
            VALUES (?,?,?,?,?)""",
         (lock_key, holder, "争用", f"持有者={row['holder']}", now),
     )
+    # 争用痕必须先落库：调用方随后的业务异常会让事务回滚，不能把后到者的痕一并吞掉。
+    conn.commit()
     return False
 
 

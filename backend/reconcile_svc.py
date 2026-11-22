@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from auth import AuthHeader, require_user
-from db import connect
+from db import HOLD_ORDER_SCHEME, connect, select_ordered_holds
 
 router = APIRouter(tags=["reconcile"])
 
@@ -32,7 +32,25 @@ def reconcile_all(authorization: AuthHeader = None):
                     "status": s["status"],
                 }
             )
-        return {"items": items, "all_ok": all(i["ok"] for i in items)}
+        return {
+            "items": items,
+            "all_ok": all(i["ok"] for i in items),
+            "holds": [dict(r) for r in select_ordered_holds(conn)],
+            "order_ok": _order_ok(conn),
+            "sort": "expire_at",
+            "scheme": HOLD_ORDER_SCHEME,
+        }
+
+
+def _order_ok(conn) -> bool:
+    rows = select_ordered_holds(conn)
+    expires = [r["expire_at"] for r in rows]
+    ids = [r["id"] for r in rows]
+    return expires == sorted(expires) and ids == [
+        r["id"] for r in conn.execute(
+            "SELECT id FROM holds ORDER BY expire_at ASC, id ASC LIMIT 200"
+        ).fetchall()
+    ]
 
 
 @router.get("/api/reconcile/{code}")

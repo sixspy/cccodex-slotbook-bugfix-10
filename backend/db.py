@@ -68,6 +68,13 @@ CREATE TABLE IF NOT EXISTS holds(
   created_at TEXT NOT NULL,
   FOREIGN KEY(slot_id) REFERENCES slots(id)
 );
+CREATE TABLE IF NOT EXISTS hold_order(
+  hold_id INTEGER PRIMARY KEY,
+  order_seq INTEGER UNIQUE NOT NULL,
+  expire_at TEXT NOT NULL,
+  materialized_at TEXT NOT NULL,
+  FOREIGN KEY(hold_id) REFERENCES holds(id)
+);
 CREATE TABLE IF NOT EXISTS bookings(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   slot_id INTEGER NOT NULL,
@@ -139,6 +146,41 @@ def write_audit(conn, actor: str, action: str, target: str, payload: dict | None
             datetime.now().isoformat(timespec="seconds"),
         ),
     )
+
+
+# 过期排序甲路径：同事务重排并按过期时刻物化序键 ORDER BY expire_at, id。
+# 口径见 docs/过期排序说明.md；禁止前端排序、禁止与乙路径混用。
+HOLD_ORDER_SCHEME = "甲-读前同事务重排并物化序键"
+
+
+def select_ordered_holds(conn) -> list:
+    """读列表：以物化序键 order_seq 为准；未物化的新增行垫底再按过期时刻收口。"""
+    return conn.execute(
+        """SELECT h.*, s.code AS slot_code, o.order_seq AS order_seq
+           FROM holds h
+           JOIN slots s ON s.id=h.slot_id
+           LEFT JOIN hold_order o ON o.hold_id=h.id
+           ORDER BY CASE WHEN o.order_seq IS NULL THEN 1 ELSE 0 END,
+                    o.order_seq ASC, h.expire_at ASC, h.id ASC LIMIT 200"""
+    ).fetchall()
+
+
+def materialize_hold_order(conn) -> list:
+    """按过期时刻重排并物化序键；须在调用方事务内执行，失败由调用方回滚。"""
+    from datetime import datetime
+
+    now = datetime.now().isoformat(timespec="seconds")
+    rows = conn.execute(
+        "SELECT id, expire_at FROM holds ORDER BY expire_at ASC, id ASC"
+    ).fetchall()
+    conn.execute("DELETE FROM hold_order")
+    for seq, row in enumerate(rows, start=1):
+        conn.execute(
+            """INSERT INTO hold_order(hold_id,order_seq,expire_at,materialized_at)
+               VALUES (?,?,?,?)""",
+            (row["id"], seq, row["expire_at"], now),
+        )
+    return rows
 
 
 def ensure_users(conn) -> None:

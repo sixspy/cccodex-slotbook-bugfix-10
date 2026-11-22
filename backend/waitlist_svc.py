@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from auth import AuthHeader, require_user, require_writer
-from db import connect, write_audit
+from db import connect, materialize_hold_order, write_audit
 from locks import release, require_lock
 
 router = APIRouter(tags=["waitlist"])
@@ -80,6 +80,7 @@ def promote_wait(body: PromoteIn, authorization: AuthHeader = None):
                    VALUES (?,?,?,?,?,?)""",
                 (slot["id"], wrow["party_key"], wrow["seats"], "占位中", expire, now),
             )
+            materialize_hold_order(conn)
             conn.execute(
                 "UPDATE waitlist SET status='已晋升' WHERE id=?", (body.wait_id,)
             )
@@ -92,6 +93,9 @@ def promote_wait(body: PromoteIn, authorization: AuthHeader = None):
             )
             conn.commit()
             return {"ok": True, "hold_id": cur.lastrowid}
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             release(conn, lock_key, user)
             conn.commit()

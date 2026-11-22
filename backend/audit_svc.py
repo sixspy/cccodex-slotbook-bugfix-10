@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from auth import AuthHeader, require_user
-from db import connect
+from db import HOLD_ORDER_SCHEME, connect, select_ordered_holds
 
 router = APIRouter(tags=["audit"])
 
@@ -17,7 +17,12 @@ def list_audit(authorization: AuthHeader = None, limit: int = 100):
         rows = conn.execute(
             "SELECT * FROM audit_trail ORDER BY id DESC LIMIT ?", (lim,)
         ).fetchall()
-        return {"items": [dict(r) for r in rows]}
+        return {
+            "items": [dict(r) for r in rows],
+            "holds_order": [dict(r) for r in select_ordered_holds(conn)],
+            "sort": "expire_at",
+            "scheme": HOLD_ORDER_SCHEME,
+        }
 
 
 @router.get("/api/proof/{party_key}")

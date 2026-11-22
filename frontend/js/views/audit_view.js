@@ -10,6 +10,15 @@ export const auditViewTemplate = `
         </tr>
       </tbody>
     </table>
+    <h3>占位序（过期时刻同态）</h3>
+    <table>
+      <thead><tr><th>序</th><th>ID</th><th>当事人</th><th>过期</th></tr></thead>
+      <tbody>
+        <tr v-for="h in (holdsOrder||[])" :key="h.id">
+          <td>{{ h.order_seq }}</td><td>{{ h.id }}</td><td>{{ h.party_key }}</td><td>{{ h.expire_at }}</td>
+        </tr>
+      </tbody>
+    </table>
     <h3>审计</h3>
     <table>
       <thead><tr><th>人</th><th>动作</th><th>目标</th><th>时</th></tr></thead>
